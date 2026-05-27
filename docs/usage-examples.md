@@ -47,3 +47,15 @@ scripts/extract_prd_pages.sh \
 
 3. `pages.json`
 4. `page-*/page.json`
+
+## 安装后快速验证
+
+```bash
+python3 scripts/run_regression_checks.py
+scripts/run_real_smoke_tests.sh axhub-page
+```
+
+如果 smoke 命中新主链路，输出里应看到：
+
+- `mode=primary`
+- `fallbackUsed=false`

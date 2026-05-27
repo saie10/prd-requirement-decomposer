@@ -9,6 +9,20 @@
 
 ## understanding-input.json
 
+当最终整理链路正常完成时，这个文件保存标准的需求理解结果。
+
+如果最后一环解析失败，例如：
+
+- `pages.json` 损坏或截断
+- Python 解析器在整理阶段抛异常
+
+也会尽量落一份结构化兜底结果，而不是只留下 traceback。此时根层会包含：
+
+- `status: blocked`
+- `reason: python_parser_crash`
+- `message`
+- `sourcePath`
+
 ### 根层稳定主字段
 
 - `artifactType`
@@ -63,7 +77,7 @@
 
 ### 推荐消费顺序
 
-后续 AI 或脚本建议按下面顺序理解：
+下游 AI 或脚本建议按下面顺序理解：
 
 1. `goal`
 2. `pageSummary`

@@ -21,6 +21,18 @@ npm install
 npx playwright install chromium
 ```
 
+安装完成后，建议马上做一次最小自检：
+
+```bash
+python3 scripts/run_regression_checks.py
+scripts/run_real_smoke_tests.sh axhub-page
+```
+
+如果环境正常，真实 smoke 应优先命中新主链路，并看到：
+
+- `mode=primary`
+- `fallbackUsed=false`
+
 ## 必需依赖
 
 脚本当前会直接检查这些命令：

@@ -15,3 +15,10 @@
   - [README.md](../../README.md)
   - [docs/output-schema.md](../../docs/output-schema.md)
   - [docs/environment.md](../../docs/environment.md)
+
+## 最小验证
+
+完成安装后，建议至少跑一次：
+
+- `python3 scripts/run_regression_checks.py`
+- `scripts/run_real_smoke_tests.sh axhub-page`

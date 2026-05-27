@@ -34,6 +34,18 @@ npm install
 npx playwright install chromium
 ```
 
+快速自检建议：
+
+```bash
+python3 scripts/run_regression_checks.py
+scripts/run_real_smoke_tests.sh axhub-page
+```
+
+如果主链路正常，smoke 输出里应看到：
+
+- `mode=primary`
+- `fallbackUsed=false`
+
 最常用的单页抽取：
 
 ```bash
@@ -51,7 +63,7 @@ scripts/extract_prd_pages.sh \
 - 需要让 AI 先把 PRD 读稳，再继续做讨论、规划或实现分析
 - PRD 很大，但当前只关心某个目录或某个单页
 - 原始页面里混着正文、规则、配置块、示例口径、截图信息，直接喂给 AI 不够稳
-- 需要把页面截图信号、控件语义和规则块一起交给后续 AI
+- 需要把页面截图信号、控件语义和规则块一起交给下游 AI
 
 不适合这些场景：
 
@@ -76,6 +88,7 @@ scripts/extract_prd_pages.sh \
 
 - 工具负责生成 `understanding-input.json`
 - AI 读取这个 JSON 后，在对话里输出一版详细、结构化的需求复述，供人工快速核对理解是否有偏差
+- 如果最后一环解析失败，工具也会尽量输出结构化的 `blocked` JSON，而不是只留下 traceback 或空结果
 
 更多字段和输出细节见：
 
@@ -86,6 +99,11 @@ scripts/extract_prd_pages.sh \
 环境依赖和初始化说明见：
 
 - [docs/environment.md](docs/environment.md)
+
+安装完成后，建议至少跑一次：
+
+- `python3 scripts/run_regression_checks.py`
+- `scripts/run_real_smoke_tests.sh axhub-page`
 
 更多命令示例见：
 

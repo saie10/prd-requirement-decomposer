@@ -34,5 +34,12 @@ export PRD_TOOL_HOME=/absolute/path/to/prd-requirement-decomposer
 
 - 只包装 Claude Code 的触发和使用方式
 - 不复制核心脚本
-- 输出契约仍然以 `understanding-input.json` 为准
+- 输出契约以 `understanding-input.json` 为准
 - 默认优先 `--output-mode concise`，只有明确需要页面结构回溯或调试时才提升到 `standard / rich`
+
+## 最小验证
+
+完成安装后，建议直接在工具仓库根目录执行：
+
+- `python3 scripts/run_regression_checks.py`
+- `scripts/run_real_smoke_tests.sh axhub-page`

@@ -36,6 +36,13 @@ Kimi Code CLI 也支持搜索：
 ## 设计原则
 
 - 只适配 skill 文案，不改核心脚本
-- 输出契约仍然以 `understanding-input.json` 为准
+- 输出契约以 `understanding-input.json` 为准
 - 详细字段和环境说明继续复用根目录文档
 - 默认优先 `--output-mode concise`，减少上下文污染；只有明确需要回溯页面结构或调试时，才使用 `standard` 或 `rich`
+
+## 最小验证
+
+完成安装后，建议直接在工具仓库根目录执行：
+
+- `python3 scripts/run_regression_checks.py`
+- `scripts/run_real_smoke_tests.sh axhub-page`

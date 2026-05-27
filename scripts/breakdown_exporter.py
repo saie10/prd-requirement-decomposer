@@ -13,6 +13,7 @@ import page_risk_parser
 
 FEATURE_LINE_RE = re.compile(r"^(?:\d+[.、]|[A-Z]\d+)")
 NUMERIC_LINE_RE = re.compile(r"[0-9]+(?:/[0-9]+)?")
+NUMERIC_UNIT_RE = re.compile(r"\d+(?:\.\d+)?(?:万|亿|千|百|%)")
 SHORT_ALNUM_RE = re.compile(r"[A-Za-z0-9_-]{1,3}")
 CASE_LINE_RE = re.compile(r"case\d+", re.IGNORECASE)
 ANCHOR_BLOCK_RE = re.compile(r"A\d{2,}")
@@ -1092,6 +1093,8 @@ def _looks_like_low_quality_block_title(title: str) -> bool:
     normalized = title.strip().rstrip("：:")
     if not normalized:
         return True
+    if NUMERIC_UNIT_RE.fullmatch(normalized):
+        return True
     if _looks_like_short_config_item(normalized):
         return True
     if normalized in {"新增字段", "筛选条件配置", "数据查询"}:
@@ -1662,7 +1665,14 @@ def _rewrite_title_as_capability(title: str) -> str | None:
     if " / " in normalized and any(keyword in normalized for keyword in ("查询方式", "模板", "筛选", "排序")):
         parts = [item.strip("【】 ") for item in normalized.split(" / ") if item.strip("【】 ")]
         if len(parts) >= 2:
-            return f"支持配置{parts[0]}与{parts[1]}"
+            left = parts[0]
+            if left.startswith("添加"):
+                left = left[len("添加") :].strip()
+            return f"支持配置{left}与{parts[1]}"
+    if normalized.startswith("支持配置"):
+        inner = normalized[len("支持配置") :].strip()
+        if inner and any(keyword in inner for keyword in ("日期", "时间", "方式", "权限")):
+            return f"支持设置{inner}"
     return None
 
 
@@ -1840,6 +1850,19 @@ def _looks_like_explanatory_section_title(title: str) -> bool:
     return _looks_like_explanatory_rule_candidate(normalized) and not _starts_with_strong_action_prefix(normalized)
 
 
+def _looks_like_configuration_extension_detail(line: str) -> bool:
+    normalized = line.strip().rstrip("：:")
+    if not normalized:
+        return False
+    if not normalized.startswith("新增"):
+        return False
+    if not any(keyword in normalized for keyword in ("字段", "筛选", "标识", "类型", "默认值", "图标")):
+        return False
+    if any(mark in normalized for mark in ("，", "。", "；", "：", ":")):
+        return True
+    return len(normalized) <= 12
+
+
 def _should_merge_built_sections(previous: dict[str, object], current: dict[str, object]) -> bool:
     previous_title = str(previous.get("title", "")).strip()
     current_title = str(current.get("title", "")).strip()
@@ -1941,6 +1964,8 @@ def _infer_section_capability_from_title(
         return f"支持{normalized}"
     if normalized.startswith("新增【") and normalized.endswith("】"):
         inner = normalized.strip("【】").replace("新增", "", 1).strip("【】 ")
+        if any(keyword in inner for keyword in ("日期", "时间", "方式", "权限")):
+            return f"支持设置{inner}"
         return f"支持配置{inner}"
     if normalized.endswith("访问授权"):
         return f"支持{normalized}"
@@ -2001,7 +2026,9 @@ def _build_section_breakdowns(
         # 一些句子虽然会被 supporting 规则命中，但本质更像“配置约束/系统行为说明”，
         # 对 AI 理解来说，把它们放到规则里比放在配套能力里更稳。
         supporting_rule_like = [
-            item for item in supporting_requirements if _looks_like_explanatory_rule_candidate(item)
+            item
+            for item in supporting_requirements
+            if _looks_like_explanatory_rule_candidate(item) or _looks_like_configuration_extension_detail(item)
         ]
         if supporting_rule_like:
             rules = _dedupe_keep_order(rules + supporting_rule_like, 10)
@@ -2332,7 +2359,16 @@ def _build_semantic_signals(
             if main_requirements:
                 action_patterns.append(main_requirements[0])
         if action_patterns:
-            result["interactionPatterns"] = _dedupe_capability_phrases(action_patterns, 6)
+            interaction_patterns = _merge_outline_labels(
+                [
+                    _compress_outline_label(_compress_capability_clause(item) or item)
+                    for item in action_patterns
+                    if str(item).strip()
+                ],
+                6,
+            )
+            if interaction_patterns:
+                result["interactionPatterns"] = interaction_patterns
 
         data_concepts: list[str] = []
         source_texts = list(lines)
@@ -2410,6 +2446,8 @@ def _looks_like_outline_noise_label(text: str) -> bool:
         return True
     if NUMERIC_LINE_RE.fullmatch(normalized):
         return True
+    if NUMERIC_UNIT_RE.fullmatch(normalized):
+        return True
     if DATE_YYYY_MM_RE.fullmatch(normalized) or DATE_YYYY_MM_DD_RE.fullmatch(normalized) or DATE_GENERIC_RE.fullmatch(normalized):
         return True
     if QUARTER_RE.fullmatch(normalized):
@@ -2476,6 +2514,10 @@ def _compress_outline_label(label: str) -> str:
         inner = normalized[len("支持配置") :].strip()
         if inner:
             return f"{inner}配置"
+    if normalized.startswith("支持设置"):
+        inner = normalized[len("支持设置") :].strip()
+        if inner:
+            return f"{inner}设置"
     if normalized.startswith("支持下载") and "SQL" in normalized.upper():
         return "结果下载与 SQL 查看"
     if normalized.startswith("支持保存为"):
@@ -2490,6 +2532,50 @@ def _compress_outline_label(label: str) -> str:
         if stripped:
             return stripped
     return normalized
+
+
+def _merge_outline_labels(labels: list[str], limit: int) -> list[str]:
+    merged: list[str] = []
+    index = 0
+    while index < len(labels):
+        current = str(labels[index]).strip()
+        if index + 1 < len(labels):
+            nxt = str(labels[index + 1]).strip()
+            for suffix in ("选择", "配置"):
+                if current.endswith(suffix) and nxt.endswith(suffix):
+                    left = current[: -len(suffix)].strip()
+                    right = nxt[: -len(suffix)].strip()
+                    if left and right and len(left) <= 8 and len(right) <= 8:
+                        merged.append(f"{left}与{right}{suffix}")
+                        index += 2
+                        break
+            else:
+                merged.append(current)
+                index += 1
+                continue
+            continue
+        merged.append(current)
+        index += 1
+    return _dedupe_keep_order(merged, limit)
+
+
+def _merge_adjacent_page_capabilities(items: list[str], limit: int) -> list[str]:
+    merged: list[str] = []
+    index = 0
+    while index < len(items):
+        current = str(items[index]).strip()
+        if index + 1 < len(items):
+            nxt = str(items[index + 1]).strip()
+            if current.startswith("支持选择") and nxt.startswith("支持选择"):
+                left = current[len("支持选择") :].strip()
+                right = nxt[len("支持选择") :].strip()
+                if left and right and len(left) <= 8 and len(right) <= 8:
+                    merged.append(f"支持选择{left}与{right}")
+                    index += 2
+                    continue
+        merged.append(current)
+        index += 1
+    return _dedupe_keep_order(merged, limit)
 
 
 def _build_understanding_outline(
@@ -2518,6 +2604,7 @@ def _build_understanding_outline(
             4,
         )
         if section_labels:
+            section_labels = _merge_outline_labels(section_labels, 4)
             joined = "、".join(section_labels[:4])
             outline.append(f"页面主要分为这些部分：{joined}")
 
@@ -2617,10 +2704,42 @@ def _collect_evidence_references(items: list[str], evidence_index: dict[str, dic
             continue
         evidence = evidence_index.get(normalized)
         if not evidence:
+            matched_payloads: list[dict[str, object]] = []
             for candidate, payload in evidence_index.items():
                 if normalized in candidate or candidate in normalized:
-                    evidence = payload
-                    break
+                    matched_payloads.append(payload)
+            if matched_payloads:
+                merged_sections: list[str] = []
+                merged_lines: list[str] = []
+                for payload in matched_payloads:
+                    merged_sections.extend(payload.get("fromSections", []))
+                    merged_lines.extend(payload.get("evidenceLines", []))
+                evidence = {
+                    "fromSections": _dedupe_keep_order(merged_sections, 6),
+                    "evidenceLines": _dedupe_keep_order(merged_lines, 6),
+                }
+        if normalized.startswith("支持选择") and "与" in normalized:
+            body = normalized[len("支持选择") :].strip()
+            parts = [part.strip() for part in body.split("与") if part.strip()]
+            if len(parts) >= 2:
+                matched_payloads = []
+                for part in parts:
+                    for candidate, payload in evidence_index.items():
+                        if candidate == f"支持选择{part}" or candidate == part:
+                            matched_payloads.append(payload)
+                if matched_payloads:
+                    merged_sections: list[str] = []
+                    merged_lines: list[str] = []
+                    if evidence:
+                        merged_sections.extend(evidence.get("fromSections", []))
+                        merged_lines.extend(evidence.get("evidenceLines", []))
+                    for payload in matched_payloads:
+                        merged_sections.extend(payload.get("fromSections", []))
+                        merged_lines.extend(payload.get("evidenceLines", []))
+                    evidence = {
+                        "fromSections": _dedupe_keep_order(merged_sections, 6),
+                        "evidenceLines": _dedupe_keep_order(merged_lines, 6),
+                    }
         reference = {"item": normalized}
         if evidence:
             if evidence.get("fromSections"):
@@ -2699,6 +2818,7 @@ def build_breakdown(pages: list[dict[str, object]]) -> dict[str, object]:
                 main_requirements = _dedupe_capability_phrases(page_summary, 8)
             else:
                 main_requirements = _dedupe_capability_phrases(section_titles + main_requirements, 8)
+            main_requirements = _merge_adjacent_page_capabilities(main_requirements, 8)
             supporting_requirements = [
                 item
                 for item in supporting_requirements
@@ -2806,7 +2926,10 @@ def build_breakdown(pages: list[dict[str, object]]) -> dict[str, object]:
                 if goal and _looks_like_page_level_capability_summary(goal[0]):
                     page_out["mainRequirements"] = [goal[0]]
                 else:
-                    page_out["mainRequirements"] = _dedupe_capability_phrases(section_capabilities, 8)
+                    page_out["mainRequirements"] = _merge_adjacent_page_capabilities(
+                        _dedupe_capability_phrases(section_capabilities, 8),
+                        8,
+                    )
 
         evidence_index = _build_requirement_evidence_index(section_breakdowns)
         page_out["evidenceReferences"] = {
@@ -2860,6 +2983,20 @@ def build_breakdown(pages: list[dict[str, object]]) -> dict[str, object]:
     return result
 
 
+def _build_blocked_breakdown(*, pages_path: Path, message: str) -> dict[str, object]:
+    return {
+        "artifactType": "prd-understanding-input",
+        "formatVersion": 1,
+        "generatedAt": datetime.now().isoformat(timespec="seconds"),
+        "status": "blocked",
+        "reason": "python_parser_crash",
+        "message": message,
+        "sourcePath": str(pages_path),
+        "pageCount": 0,
+        "pages": [],
+    }
+
+
 def main() -> int:
     if len(sys.argv) not in {3, 4}:
         print("Usage: breakdown_exporter.py <pages-json-file> <output-dir> [output-mode]", file=sys.stderr)
@@ -2868,12 +3005,26 @@ def main() -> int:
     pages_path = Path(sys.argv[1])
     output_dir = Path(sys.argv[2])
     output_mode = sys.argv[3] if len(sys.argv) == 4 else "standard"
-    pages = json.loads(pages_path.read_text(encoding="utf-8"))
-    breakdown = build_breakdown(pages)
+    understanding_json_path = output_dir / "understanding-input.json"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        pages = json.loads(pages_path.read_text(encoding="utf-8"))
+        breakdown = build_breakdown(pages)
+    except Exception as error:
+        print(f"breakdown_exporter blocked: {error}", file=sys.stderr)
+        blocked = _build_blocked_breakdown(
+            pages_path=pages_path,
+            message=error.message if hasattr(error, "message") and error.message else str(error),
+        )
+        understanding_json_path.write_text(
+            json.dumps(blocked, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        return 0
 
     # 默认主产物改成 AI 优先消费的结构化 JSON。
     # 这里不再默认落盘面向人阅读的导读文档，避免 skill 重心再次偏向“生成说明文档”。
-    understanding_json_path = output_dir / "understanding-input.json"
     understanding_json_path.write_text(
         json.dumps(breakdown, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
