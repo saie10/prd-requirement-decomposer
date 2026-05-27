@@ -1,0 +1,4 @@
+version: 1
+display_name: PRD 需求拆解
+short_description: 解析墨刀或 Axhub 的指定范围 PRD 页面，默认输出需求拆解，可选结合相关代码做语义校准。
+default_prompt: 用 prd-requirement-decomposer 看这个目录或页面，并输出需求拆解。

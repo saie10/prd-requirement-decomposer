@@ -1,0 +1,14 @@
+{
+  "name": "prd-requirement-decomposer",
+  "version": "0.1.0",
+  "private": false,
+  "description": "PRD understanding preprocessor for Modao and Axhub share links, producing understanding-input.json for downstream AI consumption.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@playwright/cli": "^1.55.0",
+    "playwright-core": "^1.55.0"
+  }
+}
